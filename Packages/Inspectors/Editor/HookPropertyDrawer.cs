@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEditor.UIElements;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace Inspectors
@@ -37,19 +38,45 @@ namespace Inspectors
             var flags = BindingFlags.Instance |
                         BindingFlags.Public |
                         BindingFlags.NonPublic;
+
+            #region Method
+
             var hookMethod = targetType.GetMethod(attr.MethodName, flags);
+            if (hookMethod == null)
+            {
+                hookMethod = GetFlattenedMethods(targetType, attr.MethodName).FirstOrDefault();
+            }
 
-            if (hookMethod == null) hookMethod = GetFlattenedMethods(targetType, attr.MethodName).FirstOrDefault();
+            if (hookMethod != null)
+            {
+                field.RegisterValueChangeCallback(e => { hookMethod.Invoke(target, null); });
+                return field;
+            }
 
-            if (hookMethod == null) return field;
+            #endregion
 
-            field.RegisterValueChangeCallback(e => { hookMethod.Invoke(target, null); });
+            #region Property
+
+            var hookProperty = targetType.GetProperty(attr.MethodName, flags);
+            if (hookProperty == null)
+            {
+                hookProperty = GetFlattenedProperties(targetType, attr.MethodName).FirstOrDefault();
+            }
+
+            if (hookProperty != null)
+            {
+                field.RegisterValueChangeCallback(e => hookProperty.SetValue(target, e.changedProperty.boxedValue));
+                return field;
+            }
+
+            #endregion
+
             return field;
         }
 
-        public static IEnumerable<MethodInfo> GetFlattenedMethods(Type type, string methodName)
+        private static IEnumerable<MethodInfo> GetFlattenedMethods(Type type, string methodName)
         {
-            while (type != (Type) null)
+            while (type != null)
             {
                 MethodInfo[] methods = type.GetMethods(BindingFlags.DeclaredOnly | BindingFlags.Instance |
                                                        BindingFlags.Static | BindingFlags.Public |
@@ -61,7 +88,23 @@ namespace Inspectors
                 }
 
                 type = type.BaseType;
-                methods = (MethodInfo[]) null;
+            }
+        }
+
+        private static IEnumerable<PropertyInfo> GetFlattenedProperties(Type type, string propertyName)
+        {
+            while (type != null)
+            {
+                var properties = type.GetProperties(BindingFlags.DeclaredOnly | BindingFlags.Instance |
+                                                    BindingFlags.Static | BindingFlags.Public |
+                                                    BindingFlags.NonPublic);
+                for (int i = 0; i < properties.Length; ++i)
+                {
+                    if (properties[i].Name == propertyName)
+                        yield return properties[i];
+                }
+
+                type = type.BaseType;
             }
         }
     }
